@@ -93,15 +93,16 @@ class BatchedGemmFunctor {
                   const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
                   const int M, const int N, const int K, const T alpha,
                   const T* A, const T* B, const T beta, T* C,
-                  const int batchCount);
-}
+                  const int batchCount, const int strideA, const int strideB);
+};
 
 // Implements the logic of numpy matmul:
 // https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html
 //
 // but allowing also for a, b to be transposed
 //
-// Both a & b can be rank-1, rank-2, or rank-3 tensors.
+// Both a & b can be 1- to 3-dimensional. Higher rank tensors are not supported
+// yet.
 template <typename Place, typename T>
 class MatMulFunctor {
  public:
@@ -112,44 +113,75 @@ class MatMulFunctor {
     auto dim_a = a.dims();
     auto dim_b = b.dims();
     auto dim_out = out->dims();
-    int batchCount, M, N, K;
+    int M, N, K, batchCount, strideA = 0, strideB = 0;
 
-    PADDLE_ENFORCE(a.place() == b.place() && b.place() == out.place()),
+    PADDLE_ENFORCE(a.place() == b.place() && b.place() == out->place(),
                    "Tensors must all be in same place.");
+    PADDLE_ENFORCE_GE(dim_a.size(), 1,
+                      "Input tensor a must be at least 1-dimensional.");
+    PADDLE_ENFORCE_GE(dim_b.size(), 1,
+                      "Input tensor b must be at least 1-dimensional.");
+    PADDLE_ENFORCE_LE(dim_a.size(), 3,
+                      "Input tensor a must be at most 3-dimensional.");
+    PADDLE_ENFORCE_LE(dim_b.size(), 3,
+                      "Input tensor b must be at most 3-dimensional.");
 
-    if (dim_a.size() == 1) {
-      // prepend dimension 1 (no transpose)
-      // or append dimension 1 (transpose)
-      // at end, remove extra dim from output
-    }
-    if (dim_b.size() == 1) {
-      // append dimension 1 (no transpose)
-      // or prepend dimension 1 (transpose)
-      // at end, remove extra dim from output
+    switch (dim_a.size()) {
+      case 1:
+        // prepend dimension 1 (no transpose)
+        // or append dimension 1 (transpose)
+        // at end, remove extra dim from output
+        M = trans_a ? dim_a[0] : 1;
+        K = trans_a ? 1 : dim_a[0];
+        break;
+      case 2:
+        M = trans_a ? dim_a[1] : dim_a[0];
+        K = trans_a ? dim_a[0] : dim_a[1];
+        break;
+      case 3:
+        batchCount = dim_a[0];
+        M = trans_a ? dim_a[2] : dim_a[1];
+        K = trans_a ? dim_a[1] : dim_a[2];
+        strideA = M * K;
+        break;
+      default:
+        assert(false);
     }
 
-    if (dim_a.size() == 2 && dim_b.size() == 2 && dim_out.size() == 2) {
+    switch (dim_b.size()) {
+      case 1:
+        // prepend dimension 1 (no transpose)
+        // or append dimension 1 (transpose)
+        // at end, remove extra dim from output
+        K = trans_b ? dim_b[0] : 1;
+        N = trans_b ? 1 : dim_b[0];
+        break;
+      case 2:
+        K = trans_b ? dim_b[1] : dim_b[0];
+        N = trans_b ? dim_b[0] : dim_b[1];
+        break;
+      case 3:
+        batchCount = dim_b[0];
+        K = trans_b ? dim_b[2] : dim_b[1];
+        N = trans_b ? dim_b[1] : dim_b[2];
+        strideB = K * N;
+        break;
+      default:
+        assert(false);
+    }
+
+    CBLAS_TRANSPOSE transA = (trans_a == false) ? CblasNoTrans : CblasTrans;
+    CBLAS_TRANSPOSE transB = (trans_b == false) ? CblasNoTrans : CblasTrans;
+
+    if (dim_a.size() == 2 && dim_b.size()) {
       // regular matrix multiplication
-      int M = dim_out[0];
-      int N = dim_out[1];
-      int K = (trans_a == false) ? dim_a[1] : dim_a[0];
-
-      CBLAS_TRANSPOSE transA = (trans_a == false) ? CblasNoTrans : CblasTrans;
-      CBLAS_TRANSPOSE transB = (trans_b == false) ? CblasNoTrans : CblasTrans;
-
       gemm<Place, T>(context, transA, transB, M, N, K, alpha, a.data<T>(),
                      b.data<T>(), beta, out->data<T>());
-    } else if (dim_out.size() == 3) {
+    } else {
       // batched matrix multiplication
-      int batchCount = dim_out[0];
-      int M = dim_out[1];
-      int N = dim_out[2];
-      int K;
-      if (dim_a.size()) (trans_a == false) ? dim_a[1] : dim_a[0];
-
-      BatchedGemmFunctor<Place, T>()(context, transA, transB, M, N, K, alpha,
-                                     a.data<T>(), b.data<T>(), beta,
-                                     out->data<T>(), batchCount);
+      BatchedGemmFunctor<Place, T>()(
+          context, transA, transB, M, N, K, alpha, a.data<T>(), b.data<T>(),
+          beta, out->data<T>(), batchCount, strideA, strideB);
     }
   }
 };

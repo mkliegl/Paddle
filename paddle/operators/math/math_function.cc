@@ -131,9 +131,79 @@ void matmul<platform::CPUPlace, double>(
 }
 
 #ifdef PADDLE_USE_MKLML
-// use cblas_?gemm_batched
+// Use cblas_{s,d}gemm_batched if available: Run with 1 group of size batchSize.
+template <>
+class BatchedGemmFunctor<platform::CPUPlace, float> {
+ public:
+  void operator()(const platform::DeviceContext& context,
+                  const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
+                  const int M, const int N, const int K, const float alpha,
+                  const float* A, const float* B, const float beta, float* C,
+                  const int batchCount, const int strideA, const int strideB) {
+    int lda = (transA == CblasNoTrans) ? K : M;
+    int ldb = (transB == CblasNoTrans) ? N : K;
+    int ldc = N;
+    auto a_array = std::vector<const float*>(batchCount);
+    auto b_array = std::vector<const float*>(batchCount);
+    auto c_array = std::vector<float*>(batchCount);
+    for (int k = 0; k < batchCount; ++k) {
+      a_array[k] = &A[k * strideA];
+      b_array[k] = &B[k * strideB];
+      c_array[k] = &C[k * M * N];
+    }
+    cblas_sgemm_batch(CblasRowMajor, &transA, &transB, &M, &N, &K, &alpha,
+                      a_array.data(), &lda, b_array.data(), &ldb, &beta,
+                      c_array.data(), &ldc, 1 /* group_count */, &batchCount);
+  }
+};
+
+template <>
+class BatchedGemmFunctor<platform::CPUPlace, double> {
+ public:
+  void operator()(const platform::DeviceContext& context,
+                  const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
+                  const int M, const int N, const int K, const double alpha,
+                  const double* A, const double* B, const double beta,
+                  double* C, const int batchCount, const int strideA,
+                  const int strideB) {
+    int lda = (transA == CblasNoTrans) ? K : M;
+    int ldb = (transB == CblasNoTrans) ? N : K;
+    int ldc = N;
+    auto a_array = std::vector<const double*>(batchCount);
+    auto b_array = std::vector<const double*>(batchCount);
+    auto c_array = std::vector<double*>(batchCount);
+    for (int k = 0; k < batchCount; ++k) {
+      a_array[k] = &A[k * strideA];
+      b_array[k] = &B[k * strideB];
+      c_array[k] = &C[k * M * N];
+    }
+    cblas_dgemm_batch(CblasRowMajor, &transA, &transB, &M, &N, &K, &alpha,
+                      a_array.data(), &lda, b_array.data(), &ldb, &beta,
+                      c_array.data(), &ldc, 1 /* group_count */, &batchCount);
+  }
+};
 #else
-// loop
+// Naive implementation for now: Just loop over the batch dimension, i.e.,
+// compute the gemm's serially.
+// (In the future, this should probably be parallelized.)
+template <>
+class BatchedGemmFunctor<platform::CPUPlace, typename T> {
+ public:
+  void operator()(const platform::DeviceContext& context,
+                  const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
+                  const int M, const int N, const int K, const T alpha,
+                  const T* A, const T* B, const T beta, T* C,
+                  const int batchCount, const int strideA, const int strideB) {
+    for (int k = 0; k < batchCount; ++k) {
+      const T* Ak = &A[k * strideA];
+      const T* Bk = &B[k * strideB];
+      const T* Ck = &C[k * M * N];
+      gemm<platform::CPUPlace, T>(context, transA, transB, M, N, K, alpha, Ak,
+                                  Bk, beta, Ck);
+    }
+  }
+};
+
 #endif
 }  // namespace math
 }  // namespace operators
