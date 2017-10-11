@@ -130,6 +130,11 @@ void matmul<platform::CPUPlace, double>(
       matrix_b.data<double>(), beta, matrix_out->data<double>());
 }
 
+#ifdef PADDLE_USE_MKLML
+// use cblas_?gemm_batched
+#else
+// loop
+#endif
 }  // namespace math
 }  // namespace operators
 }  // namespace paddle
