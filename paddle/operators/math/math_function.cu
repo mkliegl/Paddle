@@ -155,6 +155,28 @@ void matmul<platform::GPUPlace, double>(
       matrix_b.data<double>(), beta, matrix_out->data<double>());
 }
 
+// Naive implementation for now: Just loop over the batch dimension, i.e.,
+// compute the gemm serially.
+// (In the future, this should probably be parallelized.)
+template <typename T>
+class BatchedGemmFunctor<platform::GPUPlace, T> {
+ public:
+  void operator()(const platform::DeviceContext& context,
+                  const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
+                  const int M, const int N, const int K, const T alpha,
+                  const T* A, const T* B, const T beta, T* C,
+                  const int batchCount, const int strideA, const int strideB) {
+    printf("GPU Batched GEMM - Naive!\n");
+    for (int k = 0; k < batchCount; ++k) {
+      const T* Ak = &A[k * strideA];
+      const T* Bk = &B[k * strideB];
+      const T* Ck = &C[k * M * N];
+      gemm<platform::GPUPlace, T>(context, transA, transB, M, N, K, alpha, Ak,
+                                  Bk, beta, Ck);
+    }
+  }
+};
+
 }  // namespace math
 }  // namespace operators
 }  // namespace paddle
