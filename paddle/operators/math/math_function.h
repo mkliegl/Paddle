@@ -113,7 +113,6 @@ class MatMulFunctor {
     auto dim_a = a.dims();
     auto dim_b = b.dims();
     auto dim_out = out->dims();
-    int M, N, K, batchCount, strideA = 0, strideB = 0;
 
     PADDLE_ENFORCE(a.place() == b.place() && b.place() == out->place(),
                    "Tensors must all be in same place.");
@@ -126,11 +125,12 @@ class MatMulFunctor {
     PADDLE_ENFORCE_LE(dim_b.size(), 3,
                       "Input tensor b must be at most 3-dimensional.");
 
+    int M = 0, N = 0, K = 0, batchCount = 0, strideA = 0, strideB = 0;
+
     switch (dim_a.size()) {
       case 1:
-        // prepend dimension 1 (no transpose)
-        // or append dimension 1 (transpose)
-        // at end, remove extra dim from output
+        // like np.matmul:
+        // prepend dimension 1 (no transpose) or append dimension 1 (transpose)
         M = trans_a ? dim_a[0] : 1;
         K = trans_a ? 1 : dim_a[0];
         break;
@@ -150,9 +150,8 @@ class MatMulFunctor {
 
     switch (dim_b.size()) {
       case 1:
-        // prepend dimension 1 (no transpose)
-        // or append dimension 1 (transpose)
-        // at end, remove extra dim from output
+        // like np.matmul:
+        // append dimension 1 (no transpose) or prepend dimension 1 (transpose)
         K = trans_b ? dim_b[0] : 1;
         N = trans_b ? 1 : dim_b[0];
         break;
@@ -173,7 +172,7 @@ class MatMulFunctor {
     CBLAS_TRANSPOSE transA = (trans_a == false) ? CblasNoTrans : CblasTrans;
     CBLAS_TRANSPOSE transB = (trans_b == false) ? CblasNoTrans : CblasTrans;
 
-    if (dim_a.size() == 2 && dim_b.size()) {
+    if (!batchCount) {
       // regular matrix multiplication
       gemm<Place, T>(context, transA, transB, M, N, K, alpha, a.data<T>(),
                      b.data<T>(), beta, out->data<T>());

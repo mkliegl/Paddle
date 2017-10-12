@@ -22,9 +22,6 @@ namespace operators {
 namespace matmul_detail {
 
 using Tensor = framework::Tensor;
-template <typename T, int MajorType = Eigen::RowMajor,
-          typename IndexType = Eigen::DenseIndex>
-using EigenMatrix = framework::EigenMatrix<T, MajorType, IndexType>;
 
 template <typename Place, typename T>
 class MatMulKernel : public framework::OpKernel<T> {
@@ -32,21 +29,12 @@ class MatMulKernel : public framework::OpKernel<T> {
   void Compute(const framework::ExecutionContext& context) const override {
     const Tensor* x = context.Input<Tensor>("X");
     const Tensor* y = context.Input<Tensor>("Y");
-    Tensor* z = context.Output<Tensor>("Out");
-    const Tensor x_matrix =
-        x->dims().size() > 2
-            ? framework::ReshapeToMatrix<T>(
-                  *x, context.template Attr<int>("x_num_col_dims"))
-            : *x;
-    const Tensor y_matrix =
-        y->dims().size() > 2
-            ? framework::ReshapeToMatrix<T>(
-                  *y, context.template Attr<int>("y_num_col_dims"))
-            : *y;
-
-    z->mutable_data<T>(context.GetPlace());
-    math::matmul<Place, T>(context.device_context(), x_matrix, false, y_matrix,
-                           false, 1, z, 0);
+    Tensor* out = context.Output<Tensor>("Out");
+    out->mutable_data<T>(context.GetPlace());
+    bool transpose_x = context.Attr<bool>("transposeX");
+    bool transpose_y = context.Attr<bool>("transposeY");
+    math::MatMulFunctor<Place, T>()(context.device_context(), *x, transpose_x,
+                                    *y, transpose_y, T(1), out, T(0));
   }
 };
 

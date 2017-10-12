@@ -32,27 +32,91 @@ class MatMulOp : public framework::OperatorWithKernel {
     PADDLE_ENFORCE(ctx->HasOutput("Out"),
                    "Output(Out) of MatMulOp should not be null.");
 
-    auto x_dims = ctx->GetInputDim("X");
-    auto y_dims = ctx->GetInputDim("Y");
-    int x_num_col_dims = ctx->Attrs().Get<int>("x_num_col_dims");
-    int y_num_col_dims = ctx->Attrs().Get<int>("y_num_col_dims");
+    auto dim_x = ctx->GetInputDim("X");
+    auto dim_y = ctx->GetInputDim("Y");
+    bool transpose_x = ctx->Attrs().Get<bool>("transposeX");
+    bool transpose_y = ctx->Attrs().Get<bool>("transposeY");
 
-    PADDLE_ENFORCE_GT(
-        x_dims.size(), x_num_col_dims,
-        "The input tensor X's rank of MatMulOp should be larger than "
-        "x_num_col_dims.");
-    PADDLE_ENFORCE_GT(
-        y_dims.size(), y_num_col_dims,
-        "The input tensor Y's rank of MatMulOp should be larger than "
-        "y_num_col_dims.");
+    PADDLE_ENFORCE_GE(dim_x.size(), 1,
+                      "Input tensor X must be at least 1-dimensional.");
+    PADDLE_ENFORCE_GE(dim_y.size(), 1,
+                      "Input tensor Y must be at least 1-dimensional.");
+    PADDLE_ENFORCE_LE(dim_x.size(), 3,
+                      "Input tensor X must be at most 3-dimensional.");
+    PADDLE_ENFORCE_LE(dim_y.size(), 3,
+                      "Input tensor Y must be at most 3-dimensional.");
 
-    auto x_mat_dims = framework::flatten_to_2d(x_dims, x_num_col_dims);
-    auto y_mat_dims = framework::flatten_to_2d(y_dims, y_num_col_dims);
+    int M = 0, N = 0, KX = 0, KY = 0, batchCountX = 0, batchCountY = 0;
+    bool remove_initial_dim = false, remove_final_dim = false;
+
+    switch (dim_x.size()) {
+      case 1:
+        if (transpose_x) {
+          M = dim_x[0];
+          KX = 1;
+        } else {
+          M = 1;
+          KX = dim_x[0];
+          remove_initial_dim = true;
+        }
+        break;
+      case 2:
+        M = transpose_x ? dim_x[1] : dim_x[0];
+        KX = transpose_x ? dim_x[0] : dim_x[1];
+        break;
+      case 3:
+        batchCountX = dim_x[0];
+        M = transpose_x ? dim_x[2] : dim_x[1];
+        KX = transpose_x ? dim_x[1] : dim_x[2];
+        break;
+      default:
+        assert(false);
+    }
+
+    switch (dim_y.size()) {
+      case 1:
+        if (transpose_y) {
+          N = dim_x[0];
+          KY = 1;
+        } else {
+          N = 1;
+          KY = dim_x[0];
+          remove_final_dim = true;
+        }
+        break;
+      case 2:
+        KY = transpose_y ? dim_y[1] : dim_y[0];
+        N = transpose_y ? dim_y[0] : dim_y[1];
+        break;
+      case 3:
+        batchCountY = dim_y[0];
+        KY = transpose_y ? dim_y[2] : dim_y[1];
+        N = transpose_y ? dim_y[1] : dim_y[2];
+        break;
+      default:
+        assert(false);
+    }
 
     PADDLE_ENFORCE_EQ(
-        x_mat_dims[1], y_mat_dims[0],
+        KX, KY,
         "First matrix's width must be equal with second matrix's height.");
-    ctx->SetOutputDim("Out", {x_mat_dims[0], y_mat_dims[1]});
+    if (batchCountX && batchCountY) {
+      PADDLE_ENFORCE_EQ(
+          batchCountX, batchCountY,
+          "Input(X) and Input(Y) must have same batch dimension.");
+    }
+
+    std::vector<int64_t> dim_out;
+    if (batchCountX) {
+      dim_out.push_back(batchCountX);
+    }
+    if (!remove_initial_dim) {
+      dim_out.push_back(M);
+    }
+    if (!remove_final_dim) {
+      dim_out.push_back(N);
+    }
+    ctx->SetOutputDim("Out", framework::make_ddim(dim_out));
     ctx->ShareLoD("X", /*->*/ "Out");
   }
 };
@@ -61,32 +125,20 @@ class MatMulOpMaker : public framework::OpProtoAndCheckerMaker {
  public:
   MatMulOpMaker(framework::OpProto* proto, framework::OpAttrChecker* op_checker)
       : OpProtoAndCheckerMaker(proto, op_checker) {
-    AddInput("X", "The first input of mul op");
-    AddInput("Y", "The second input of mul op");
-    AddOutput("Out", "The output of mul op");
-    AddAttr<int>(
-        "x_num_col_dims",
-        R"DOC(mul_op can take tensors with more than two dimensions as input `X`,
-            in that case, tensors will be reshaped to a matrix. The matrix's first
-            dimension(column length) will be the product of tensor's last
-            `num_col_dims` dimensions, and the matrix's second dimension(row length)
-            will be the product of tensor's first `rank - num_col_dims` dimensions.
+    AddInput("X", "The first input of MatMul op");
+    AddInput("Y", "The second input of MatMul op");
+    AddOutput("Out", "The output of MatMul op");
+    AddAttr<bool>("transposeX",
+                  R"DOC(If true, use the transpose of X.
         )DOC")
-        .SetDefault(1)
-        .EqualGreaterThan(1);
-    AddAttr<int>(
-        "y_num_col_dims",
-        R"DOC(mul_op can take tensors with more than two dimensions as input `Y`,
-             in that case, tensors will be reshaped to a matrix. Just like input `X`.
+        .SetDefault(false);
+    AddAttr<bool>("transposeY",
+                  R"DOC(If true, use the transpose of Y.
         )DOC")
-        .SetDefault(1)
-        .EqualGreaterThan(1);
+        .SetDefault(false);
     AddComment(R"DOC(
-Mul operator is used to perform matrix multiplication for input X and Y.
-
-The equation is:
-
-    Out = X * Y
+The MatMul operator is used to perform (batched) matrix multiplication for
+input tensors X and Y. The behavior is similar to the `numpy.matmul` function.
 
 Both the input `X` and `Y` can carry the LoD (Level of Details) information,
 or not. But the output only shares the LoD with input `X`.
