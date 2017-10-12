@@ -184,6 +184,7 @@ class BatchedGemmFunctor<platform::CPUPlace, double> {
                       c_array.data(), &ldc, 1 /* group_count */, &batchCount);
   }
 };
+
 #else
 // Naive implementation for now: Just loop over the batch dimension, i.e.,
 // compute the gemm serially.
@@ -200,7 +201,7 @@ class BatchedGemmFunctor<platform::CPUPlace, T> {
     for (int k = 0; k < batchCount; ++k) {
       const T* Ak = &A[k * strideA];
       const T* Bk = &B[k * strideB];
-      const T* Ck = &C[k * M * N];
+      T* Ck = &C[k * M * N];
       gemm<platform::CPUPlace, T>(context, transA, transB, M, N, K, alpha, Ak,
                                   Bk, beta, Ck);
     }
@@ -208,6 +209,11 @@ class BatchedGemmFunctor<platform::CPUPlace, T> {
 };
 
 #endif
+
+template class BatchedGemmFunctor<platform::CPUPlace, float>;
+
+template class BatchedGemmFunctor<platform::CPUPlace, double>;
+
 }  // namespace math
 }  // namespace operators
 }  // namespace paddle

@@ -170,12 +170,16 @@ class BatchedGemmFunctor<platform::GPUPlace, T> {
     for (int k = 0; k < batchCount; ++k) {
       const T* Ak = &A[k * strideA];
       const T* Bk = &B[k * strideB];
-      const T* Ck = &C[k * M * N];
+      T* Ck = &C[k * M * N];
       gemm<platform::GPUPlace, T>(context, transA, transB, M, N, K, alpha, Ak,
                                   Bk, beta, Ck);
     }
   }
 };
+
+template class BatchedGemmFunctor<platform::GPUPlace, float>;
+
+template class BatchedGemmFunctor<platform::GPUPlace, double>;
 
 }  // namespace math
 }  // namespace operators
