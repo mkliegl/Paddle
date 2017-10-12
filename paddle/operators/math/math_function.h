@@ -115,7 +115,7 @@ class MatMulFunctor {
     auto dim_out = out->dims();
 
     PADDLE_ENFORCE(a.place() == b.place() && b.place() == out->place(),
-                   "Tensors must all be in same place.");
+                   "Tensors must all be in the same place.");
     PADDLE_ENFORCE_GE(dim_a.size(), 1,
                       "Input tensor a must be at least 1-dimensional.");
     PADDLE_ENFORCE_GE(dim_b.size(), 1,
@@ -125,24 +125,25 @@ class MatMulFunctor {
     PADDLE_ENFORCE_LE(dim_b.size(), 3,
                       "Input tensor b must be at most 3-dimensional.");
 
-    int M = 0, N = 0, K = 0, batchCount = 0, strideA = 0, strideB = 0;
+    int M = 0, N = 0, kA = 0, kB = 0, batchCountA = 0, batchCountB = 0,
+        strideA = 0, strideB = 0;
 
     switch (dim_a.size()) {
       case 1:
-        // like np.matmul:
+        // similar to np.matmul:
         // prepend dimension 1 (no transpose) or append dimension 1 (transpose)
         M = trans_a ? dim_a[0] : 1;
-        K = trans_a ? 1 : dim_a[0];
+        kA = trans_a ? 1 : dim_a[0];
         break;
       case 2:
         M = trans_a ? dim_a[1] : dim_a[0];
-        K = trans_a ? dim_a[0] : dim_a[1];
+        kA = trans_a ? dim_a[0] : dim_a[1];
         break;
       case 3:
-        batchCount = dim_a[0];
+        batchCountA = dim_a[0];
         M = trans_a ? dim_a[2] : dim_a[1];
-        K = trans_a ? dim_a[1] : dim_a[2];
-        strideA = M * K;
+        kA = trans_a ? dim_a[1] : dim_a[2];
+        strideA = M * kA;
         break;
       default:
         assert(false);
@@ -150,36 +151,47 @@ class MatMulFunctor {
 
     switch (dim_b.size()) {
       case 1:
-        // like np.matmul:
+        // similar to np.matmul:
         // append dimension 1 (no transpose) or prepend dimension 1 (transpose)
-        K = trans_b ? dim_b[0] : 1;
-        N = trans_b ? 1 : dim_b[0];
+        kB = trans_b ? 1 : dim_b[0];
+        N = trans_b ? dim_b[0] : 1;
         break;
       case 2:
-        K = trans_b ? dim_b[1] : dim_b[0];
+        kB = trans_b ? dim_b[1] : dim_b[0];
         N = trans_b ? dim_b[0] : dim_b[1];
         break;
       case 3:
-        batchCount = dim_b[0];
-        K = trans_b ? dim_b[2] : dim_b[1];
+        batchCountB = dim_b[0];
+        kB = trans_b ? dim_b[2] : dim_b[1];
         N = trans_b ? dim_b[1] : dim_b[2];
-        strideB = K * N;
+        strideB = kB * N;
         break;
       default:
         assert(false);
     }
+
+    PADDLE_ENFORCE_EQ(
+        kA, kB,
+        "First matrix's width must be equal with second matrix's height.");
+    if (batchCountA && batchCountB) {
+      PADDLE_ENFORCE_EQ(
+          batchCountA, batchCountB,
+          "When input tensors a and b are both batched, they must have the "
+          "same batch dimension.");
+    }
+    int batchCount = std::max(batchCountA, batchCountB);
 
     CBLAS_TRANSPOSE transA = (trans_a == false) ? CblasNoTrans : CblasTrans;
     CBLAS_TRANSPOSE transB = (trans_b == false) ? CblasNoTrans : CblasTrans;
 
     if (!batchCount) {
       // regular matrix multiplication
-      gemm<Place, T>(context, transA, transB, M, N, K, alpha, a.data<T>(),
+      gemm<Place, T>(context, transA, transB, M, N, kA, alpha, a.data<T>(),
                      b.data<T>(), beta, out->data<T>());
     } else {
       // batched matrix multiplication
       BatchedGemmFunctor<Place, T>()(
-          context, transA, transB, M, N, K, alpha, a.data<T>(), b.data<T>(),
+          context, transA, transB, M, N, kA, alpha, a.data<T>(), b.data<T>(),
           beta, out->data<T>(), batchCount, strideA, strideB);
     }
   }

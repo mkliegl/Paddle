@@ -103,7 +103,8 @@ class MatMulOp : public framework::OperatorWithKernel {
     if (batchCountX && batchCountY) {
       PADDLE_ENFORCE_EQ(
           batchCountX, batchCountY,
-          "Input(X) and Input(Y) must have same batch dimension.");
+          "When Input(X) and Input(Y) are both three dimensional, they "
+          "must have same batch dimension.");
     }
     int batchCount = std::max(batchCountX, batchCountY);
 
@@ -116,6 +117,11 @@ class MatMulOp : public framework::OperatorWithKernel {
     }
     if (!remove_final_dim) {
       dim_out.push_back(N);
+    }
+    if (dim_out.size() == 0) {
+      // We don't support 0-dimensional Tensors (scalars), so instead
+      // treat the output as a Tensor of shape (1, ) in this case.
+      dim_out.push_back(1);
     }
     ctx->SetOutputDim("Out", framework::make_ddim(dim_out));
     ctx->ShareLoD("X", /*->*/ "Out");

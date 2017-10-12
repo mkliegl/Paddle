@@ -40,8 +40,11 @@ class TestMatMulOpVecVec(TestMatMulOpBase):
         self.op_type = "matmul"
         X = np.random.random((2, )).astype("float32")
         Y = np.random.random((2, )).astype("float32")
+        # For vector-vector, 'Out' needs to be a tensor of shape (1, ) rather
+        # than a scalar. Everywhere else, we are compatible with np.matmul.
+        Out = np.array([np.matmul(X, Y)], dtype="float32")
         self.inputs = {'X': X, 'Y': Y}
-        self.outputs = {'Out': np.matmul(X, Y)}
+        self.outputs = {'Out': Out}
 
 
 class TestMatMulOpMatVec(TestMatMulOpBase):
