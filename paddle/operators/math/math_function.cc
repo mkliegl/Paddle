@@ -214,6 +214,10 @@ template class BatchedGemmFunctor<platform::CPUPlace, float>;
 
 template class BatchedGemmFunctor<platform::CPUPlace, double>;
 
+template class MatMulFunctor<platform::CPUPlace, float>;
+
+template class MatMulFunctor<platform::CPUPlace, double>;
+
 }  // namespace math
 }  // namespace operators
 }  // namespace paddle
