@@ -76,11 +76,11 @@ class MatMulOp : public framework::OperatorWithKernel {
     switch (dim_y.size()) {
       case 1:
         if (transpose_y) {
-          N = dim_x[0];
+          N = dim_y[0];
           KY = 1;
         } else {
           N = 1;
-          KY = dim_x[0];
+          KY = dim_y[0];
           remove_final_dim = true;
         }
         break;
@@ -105,10 +105,11 @@ class MatMulOp : public framework::OperatorWithKernel {
           batchCountX, batchCountY,
           "Input(X) and Input(Y) must have same batch dimension.");
     }
+    int batchCount = std::max(batchCountX, batchCountY);
 
     std::vector<int64_t> dim_out;
-    if (batchCountX) {
-      dim_out.push_back(batchCountX);
+    if (batchCount) {
+      dim_out.push_back(batchCount);
     }
     if (!remove_initial_dim) {
       dim_out.push_back(M);
