@@ -24,18 +24,18 @@ class MatMulOp : public framework::OperatorWithKernel {
   using framework::OperatorWithKernel::OperatorWithKernel;
 
  protected:
-  void InferShape(framework::InferShapeContext* ctx) const override {
-    PADDLE_ENFORCE(ctx->HasInput("X"),
+  void InferShape(framework::InferShapeContext* context) const override {
+    PADDLE_ENFORCE(context->HasInput("X"),
                    "Input(X) of MatMulOp should not be null.");
-    PADDLE_ENFORCE(ctx->HasInput("Y"),
+    PADDLE_ENFORCE(context->HasInput("Y"),
                    "Input(Y) of MatMulOp should not be null.");
-    PADDLE_ENFORCE(ctx->HasOutput("Out"),
+    PADDLE_ENFORCE(context->HasOutput("Out"),
                    "Output(Out) of MatMulOp should not be null.");
 
-    auto dim_x = ctx->GetInputDim("X");
-    auto dim_y = ctx->GetInputDim("Y");
-    bool transpose_x = ctx->Attrs().Get<bool>("transposeX");
-    bool transpose_y = ctx->Attrs().Get<bool>("transposeY");
+    auto dim_x = context->GetInputDim("X");
+    auto dim_y = context->GetInputDim("Y");
+    bool transpose_x = context->Attrs().Get<bool>("transposeX");
+    bool transpose_y = context->Attrs().Get<bool>("transposeY");
 
     PADDLE_ENFORCE_GE(dim_x.size(), 1,
                       "Input tensor X must be at least 1-dimensional.");
@@ -123,8 +123,8 @@ class MatMulOp : public framework::OperatorWithKernel {
       // treat the output as a Tensor of shape (1, ) in this case.
       dim_out.push_back(1);
     }
-    ctx->SetOutputDim("Out", framework::make_ddim(dim_out));
-    ctx->ShareLoD("X", /*->*/ "Out");
+    context->SetOutputDim("Out", framework::make_ddim(dim_out));
+    context->ShareLoD("X", /*->*/ "Out");
   }
 };
 
@@ -158,22 +158,22 @@ class MatMulOpGrad : public framework::OperatorWithKernel {
   using framework::OperatorWithKernel::OperatorWithKernel;
 
  protected:
-  void InferShape(framework::InferShapeContext* ctx) const override {
-    PADDLE_ENFORCE(ctx->HasInput("X"), "Input(X) should not be null");
-    PADDLE_ENFORCE(ctx->HasInput("Y"), "Input(Y) should not be null");
-    PADDLE_ENFORCE(ctx->HasInput(framework::GradVarName("Out")),
+  void InferShape(framework::InferShapeContext* context) const override {
+    PADDLE_ENFORCE(context->HasInput("X"), "Input(X) should not be null");
+    PADDLE_ENFORCE(context->HasInput("Y"), "Input(Y) should not be null");
+    PADDLE_ENFORCE(context->HasInput(framework::GradVarName("Out")),
                    "Input(Out@GRAD) should not be null");
-    auto x_dims = ctx->GetInputDim("X");
-    auto y_dims = ctx->GetInputDim("Y");
+    auto x_dims = context->GetInputDim("X");
+    auto y_dims = context->GetInputDim("Y");
 
     auto x_grad_name = framework::GradVarName("X");
     auto y_grad_name = framework::GradVarName("Y");
 
-    if (ctx->HasOutput(x_grad_name)) {
-      ctx->SetOutputDim(x_grad_name, x_dims);
+    if (context->HasOutput(x_grad_name)) {
+      context->SetOutputDim(x_grad_name, x_dims);
     }
-    if (ctx->HasOutput(y_grad_name)) {
-      ctx->SetOutputDim(y_grad_name, y_dims);
+    if (context->HasOutput(y_grad_name)) {
+      context->SetOutputDim(y_grad_name, y_dims);
     }
   }
 };
