@@ -33,46 +33,56 @@ class MatMulKernel : public framework::OpKernel<T> {
     out->mutable_data<T>(context.GetPlace());
     bool transpose_x = context.Attr<bool>("transposeX");
     bool transpose_y = context.Attr<bool>("transposeY");
+
     math::MatMulFunctor<Place, T>()(context.device_context(), *x, transpose_x,
                                     *y, transpose_y, T(1), out, T(0));
   }
 };
 
+// Based on dimensional compatibility for matrix multiplication, it is
+// straight-forward to check the following table:
+//
+// transposeX | False    | True     | False    | True
+// transposeY | False    | False    | True     | True
+// -----------+----------+----------+----------+-----------
+//       dX = | dOut Y^T | Y dOut^T | dOut Y   | Y^T dOut^T
+//       dY = | X^T dOut | X dOut   | dOut^T X | dOut^T X^T
 template <typename Place, typename T>
 class MatMulGradKernel : public framework::OpKernel<T> {
  public:
-  void Compute(const framework::ExecutionContext& ctx) const override {
-    int x_num_col_dims = ctx.template Attr<int>("x_num_col_dims");
-    int y_num_col_dims = ctx.template Attr<int>("y_num_col_dims");
-    const Tensor* x = ctx.Input<Tensor>("X");
-    const Tensor* y = ctx.Input<Tensor>("Y");
-    const Tensor x_matrix =
-        x->dims().size() > 2 ? framework::ReshapeToMatrix<T>(*x, x_num_col_dims)
-                             : *x;
-    const Tensor y_matrix =
-        y->dims().size() > 2 ? framework::ReshapeToMatrix<T>(*y, y_num_col_dims)
-                             : *y;
-    const Tensor* dout = ctx.Input<Tensor>(framework::GradVarName("Out"));
+  void Compute(const framework::ExecutionContext& context) const override {
+    const Tensor* x = context.Input<Tensor>("X");
+    const Tensor* y = context.Input<Tensor>("Y");
+    const Tensor* dout = context.Input<Tensor>(framework::GradVarName("Out"));
+    Tensor* dx = context.Output<Tensor>(framework::GradVarName("X"));
+    Tensor* dy = context.Output<Tensor>(framework::GradVarName("Y"));
+    bool transpose_x = context.Attr<bool>("transposeX");
+    bool transpose_y = context.Attr<bool>("transposeY");
 
-    Tensor* dx = ctx.Output<Tensor>(framework::GradVarName("X"));
-    Tensor* dy = ctx.Output<Tensor>(framework::GradVarName("Y"));
     if (dx) {
-      dx->mutable_data<T>(ctx.GetPlace());
-      Tensor dx_matrix = dx->dims().size() > 2 ? framework::ReshapeToMatrix<T>(
-                                                     *dx, x_num_col_dims)
-                                               : *dx;
-      // dx = dout * y'. dx: M x K, dout : M x N, y : K x N
-      math::matmul<Place, T>(ctx.device_context(), *dout, false, y_matrix, true,
-                             1, &dx_matrix, 0);
+      dx->mutable_data<T>(context.GetPlace());
+      if (transpose_x) {
+        math::MatMulFunctor<Place, T>()(context.device_context(), *y,
+                                        transpose_y, *dout, transpose_x, T(1),
+                                        dx, T(0));
+      } else {
+        math::MatMulFunctor<Place, T>()(context.device_context(), *dout,
+                                        transpose_x, *y, !transpose_y, T(1), dx,
+                                        T(0));
+      }
     }
+
     if (dy) {
-      dy->mutable_data<T>(ctx.GetPlace());
-      Tensor dy_matrix = dy->dims().size() > 2 ? framework::ReshapeToMatrix<T>(
-                                                     *dy, y_num_col_dims)
-                                               : *dy;
-      // dy = x' * dout. dy K x N, dout : M x N, x : M x K
-      math::matmul<Place, T>(ctx.device_context(), x_matrix, true, *dout, false,
-                             1, &dy_matrix, 0);
+      dy->mutable_data<T>(context.GetPlace());
+      if (transpose_y) {
+        math::MatMulFunctor<Place, T>()(context.device_context(), *dout,
+                                        transpose_y, *x, transpose_x, T(1), dy,
+                                        T(0));
+      } else {
+        math::MatMulFunctor<Place, T>()(context.device_context(), *x,
+                                        !transpose_x, *dout, transpose_y, T(1),
+                                        dy, T(0));
+      }
     }
   }
 };

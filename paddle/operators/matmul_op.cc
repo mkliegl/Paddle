@@ -165,21 +165,6 @@ class MatMulOpGrad : public framework::OperatorWithKernel {
                    "Input(Out@GRAD) should not be null");
     auto x_dims = ctx->GetInputDim("X");
     auto y_dims = ctx->GetInputDim("Y");
-    auto out_dims = ctx->GetInputDim(framework::GradVarName("Out"));
-
-    auto x_mat_dims =
-        framework::flatten_to_2d(x_dims, Attr<int>("x_num_col_dims"));
-    auto y_mat_dims =
-        framework::flatten_to_2d(y_dims, Attr<int>("y_num_col_dims"));
-
-    PADDLE_ENFORCE_EQ(
-        x_mat_dims[0], out_dims[0],
-        "The first dimension of Out@GRAD must equal to the first dimension of "
-        "the first operand.");
-    PADDLE_ENFORCE_EQ(
-        y_mat_dims[1], out_dims[1],
-        "The second dimension of Out@GRAD must equal to the second "
-        "dimension of the second operand.");
 
     auto x_grad_name = framework::GradVarName("X");
     auto y_grad_name = framework::GradVarName("Y");
