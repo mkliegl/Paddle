@@ -86,27 +86,12 @@ void matmul(const platform::DeviceContext& context,
             framework::Tensor* matrix_out, T beta);
 
 // Batched gemm
-//
-// The below is a naive but correct serial implementation that just loops
-// over the batch dimension. It may be overridden in math_function.cc or
-// math_function.cu to use the batched gemm functions of Intel MKL or cuBLAS,
-// respectively.
 template <typename Place, typename T>
-class BatchedGemmFunctor {
- public:
-  void operator()(const platform::DeviceContext& context,
+void batched_gemm(const platform::DeviceContext& context,
                   const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
                   const int M, const int N, const int K, const T alpha,
                   const T* A, const T* B, const T beta, T* C,
-                  const int batchCount, const int strideA, const int strideB) {
-    for (int k = 0; k < batchCount; ++k) {
-      const T* Ak = &A[k * strideA];
-      const T* Bk = &B[k * strideB];
-      T* Ck = &C[k * M * N];
-      gemm<Place, T>(context, transA, transB, M, N, K, alpha, Ak, Bk, beta, Ck);
-    }
-  }
-};
+                  const int batchCount, const int strideA, const int strideB);
 
 // Implements the logic of numpy matmul:
 // https://docs.scipy.org/doc/numpy-1.13.0/reference/generated/numpy.matmul.html
@@ -201,9 +186,9 @@ class MatMulFunctor {
                      b.data<T>(), beta, out->data<T>());
     } else {
       // batched matrix multiplication
-      BatchedGemmFunctor<Place, T>()(
-          context, transA, transB, M, N, kA, alpha, a.data<T>(), b.data<T>(),
-          beta, out->data<T>(), batchCount, strideA, strideB);
+      batched_gemm<Place, T>(context, transA, transB, M, N, kA, alpha,
+                             a.data<T>(), b.data<T>(), beta, out->data<T>(),
+                             batchCount, strideA, strideB);
     }
   }
 };
