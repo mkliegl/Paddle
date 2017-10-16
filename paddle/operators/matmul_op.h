@@ -16,6 +16,7 @@
 
 #include "paddle/framework/op_registry.h"
 #include "paddle/operators/math/math_function.h"
+#include "paddle/operators/transpose_op.h"
 
 namespace paddle {
 namespace operators {
@@ -47,6 +48,40 @@ inline Tensor Reshape(const Tensor& input, const DDim& dims) {
   Tensor output;
   output.ShareDataWith<T>(input);
   output.Resize(dims);
+  return output;
+}
+
+// Reshape a rank-3 tensor from P x M x N to (P * M) x N.
+// Identity op if the tensor is not of rank 3.
+template <typename T>
+Tensor CombineBatchAndM(const Tensor& input) {
+  Tensor output;
+  output.ShareDataWith<T>(input);
+  auto in_dims = input.dims();
+  if (in_dims.size() == 3) {
+    std::vector<int64_t> out_dims = {in_dims[0] * in_dims[1], in_dims[2]};
+    output.Resize(make_ddim(out_dims));
+  }
+  return output;
+}
+
+// Reshape a rank-3 tensor from P x M x N to M x (P * N).
+// (Warning: This requires transposing data and writes into new memory.)
+// Identity op if the tensor is not of rank 3.
+template <typename Place, typename T>
+Tensor CombineBatchAndN(const framework::ExecutionContext& context,
+                        const Tensor& input) {
+  Tensor output;
+  auto in_dims = input.dims();
+  if (in_dims.size() == 3) {
+    output.Resize(in_dims);
+    output.mutable_data<T>(context.GetPlace());
+    EigenTranspose<Place, T, 3>(context, input, output, {1, 0, 2});
+    std::vector<int64_t> out_dims = {in_dims[1], in_dims[0] * in_dims[2]};
+    output.Resize(make_ddim(out_dims));
+  } else {
+    output.ShareDataWith<T>(input);
+  }
   return output;
 }
 
@@ -90,12 +125,12 @@ class MatMulGradKernel : public framework::OpKernel<T> {
     std::vector<int64_t> x_dims = vectorize(x.dims());
     std::vector<int64_t> y_dims = vectorize(y.dims());
 
-    // If X is a vector, reshape it (and possibly dOut) to a matrix.
+    // If X is a vector, reshape it to a matrix.
     if (x_dims.size() == 1) {
       x_dims.insert(x_dims.begin(), 1);
     }
 
-    // If Y is a vector, reshape it (and possibly dOut) to a matrix.
+    // If Y is a vector, reshape it to a matrix.
     if (y_dims.size() == 1) {
       y_dims.push_back(1);
     }
@@ -137,18 +172,25 @@ class MatMulGradKernel : public framework::OpKernel<T> {
     if (batchCount) {
       dout_dims.insert(dout_dims.begin(), batchCount);
     }
-    const Tensor& X = Reshape<T>(x, make_ddim(x_dims));
-    const Tensor& Y = Reshape<T>(y, make_ddim(y_dims));
-    const Tensor& dOut = Reshape<T>(dout, make_ddim(dout_dims));
+    Tensor X = Reshape<T>(x, make_ddim(x_dims));
+    Tensor Y = Reshape<T>(y, make_ddim(y_dims));
+    Tensor dOut = Reshape<T>(dout, make_ddim(dout_dims));
 
     if (dx) {
       dx->mutable_data<T>(context.GetPlace());
+      Tensor dOut_for_dX = (x_dims.size() == 2 && y_dims.size() == 3)
+                               ? CombineBatchAndN<Place, T>(context, dOut)
+                               : dOut;
+      if (x_dims.size() == 2 && y_dims.size() == 3) {
+        Y = transpose_y ? CombineBatchAndM<T>(Y)
+                        : CombineBatchAndN<Place, T>(context, Y);
+      }
       if (transpose_x) {
         math::MatMulFunctor<Place, T>()(context.device_context(), Y,
-                                        transpose_y, dOut, transpose_x, T(1),
-                                        dx, T(0));
+                                        transpose_y, dOut_for_dX, transpose_x,
+                                        T(1), dx, T(0));
       } else {
-        math::MatMulFunctor<Place, T>()(context.device_context(), dOut,
+        math::MatMulFunctor<Place, T>()(context.device_context(), dOut_for_dX,
                                         transpose_x, Y, !transpose_y, T(1), dx,
                                         T(0));
       }
@@ -156,14 +198,22 @@ class MatMulGradKernel : public framework::OpKernel<T> {
 
     if (dy) {
       dy->mutable_data<T>(context.GetPlace());
+      Tensor dOut_for_dY = (y_dims.size() == 2 && x_dims.size() == 3)
+                               ? CombineBatchAndM<T>(dOut)
+                               : dOut;
+      if (y_dims.size() == 2 && x_dims.size() == 3) {
+        X = transpose_x ? CombineBatchAndN<Place, T>(context, X)
+                        : CombineBatchAndM<T>(X);
+        dOut = CombineBatchAndM<T>(dOut);
+      }
       if (transpose_y) {
-        math::MatMulFunctor<Place, T>()(context.device_context(), dOut,
+        math::MatMulFunctor<Place, T>()(context.device_context(), dOut_for_dY,
                                         transpose_y, X, transpose_x, T(1), dy,
                                         T(0));
       } else {
         math::MatMulFunctor<Place, T>()(context.device_context(), X,
-                                        !transpose_x, dOut, transpose_y, T(1),
-                                        dy, T(0));
+                                        !transpose_x, dOut_for_dY, transpose_y,
+                                        T(1), dy, T(0));
       }
     }
   }

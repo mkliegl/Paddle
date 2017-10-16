@@ -85,17 +85,17 @@ class Generator(object):
     def test_check_output(self):
         self.check_output(atol=1e-2)
 
+    def test_check_grad_normal(self):
+        self.check_grad(['X', 'Y'], 'Out', max_relative_error=0.5)
 
-#     def test_check_grad_normal(self):
-#         self.check_grad(['X', 'Y'], 'Out', max_relative_error=0.5)
-# 
-#     def test_check_grad_ingore_x(self):
-#         self.check_grad(
-#             ['Y'], 'Out', max_relative_error=0.5, no_grad_set=set("X"))
-# 
-#     def test_check_grad_ingore_y(self):
-#         self.check_grad(
-#             ['X'], 'Out', max_relative_error=0.5, no_grad_set=set('Y'))
+    def test_check_grad_ignore_x(self):
+        self.check_grad(
+            ['Y'], 'Out', max_relative_error=0.5, no_grad_set=set("X"))
+
+    def test_check_grad_ignore_y(self):
+        self.check_grad(
+            ['X'], 'Out', max_relative_error=0.5, no_grad_set=set('Y'))
+
 
 # Generate test cases for all possibilities
 for dim_X in [1, 2, 3]:
