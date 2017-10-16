@@ -85,7 +85,12 @@ void matmul(const platform::DeviceContext& context,
             const framework::Tensor& matrix_b, bool trans_b, T alpha,
             framework::Tensor* matrix_out, T beta);
 
-// batched gemm
+// Batched gemm
+//
+// The below is a naive but correct serial implementation that just loops
+// over the batch dimension. It may be overridden in math_function.cc or
+// math_function.cu to use the batched gemm functions of Intel MKL or cuBLAS,
+// respectively.
 template <typename Place, typename T>
 class BatchedGemmFunctor {
  public:
@@ -93,7 +98,14 @@ class BatchedGemmFunctor {
                   const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
                   const int M, const int N, const int K, const T alpha,
                   const T* A, const T* B, const T beta, T* C,
-                  const int batchCount, const int strideA, const int strideB);
+                  const int batchCount, const int strideA, const int strideB) {
+    for (int k = 0; k < batchCount; ++k) {
+      const T* Ak = &A[k * strideA];
+      const T* Bk = &B[k * strideB];
+      T* Ck = &C[k * M * N];
+      gemm<Place, T>(context, transA, transB, M, N, K, alpha, Ak, Bk, beta, Ck);
+    }
+  }
 };
 
 // Implements the logic of numpy matmul:

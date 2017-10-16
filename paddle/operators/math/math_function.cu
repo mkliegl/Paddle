@@ -155,27 +155,62 @@ void matmul<platform::GPUPlace, double>(
       matrix_b.data<double>(), beta, matrix_out->data<double>());
 }
 
-// Naive implementation for now: Just loop over the batch dimension, i.e.,
-// compute the gemm serially.
-// (In the future, this should probably be parallelized.)
-template <typename T>
-class BatchedGemmFunctor<platform::GPUPlace, T> {
+#if 0
+template <>
+class BatchedGemmFunctor<platform::GPUPlace, float> {
  public:
   void operator()(const platform::DeviceContext& context,
                   const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
-                  const int M, const int N, const int K, const T alpha,
-                  const T* A, const T* B, const T beta, T* C,
+                  const int M, const int N, const int K, const float alpha,
+                  const float* A, const float* B, const float beta, float* C,
                   const int batchCount, const int strideA, const int strideB) {
-    printf("GPU Batched GEMM - Naive!\n");
-    for (int k = 0; k < batchCount; ++k) {
-      const T* Ak = &A[k * strideA];
-      const T* Bk = &B[k * strideB];
-      T* Ck = &C[k * M * N];
-      gemm<platform::GPUPlace, T>(context, transA, transB, M, N, K, alpha, Ak,
-                                  Bk, beta, Ck);
-    }
+    // Note that cublas follows fortran order, so the order is different from
+    // the cblas convention.
+    int lda = (transA == CblasNoTrans) ? K : M;
+    int ldb = (transB == CblasNoTrans) ? N : K;
+    int ldc = N;
+    cublasOperation_t cuTransA =
+        (transA == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
+    cublasOperation_t cuTransB =
+        (transB == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
+    const int strideC = M * N;
+
+    PADDLE_ENFORCE(platform::dynload::cublasSgemmStridedBatched(
+        reinterpret_cast<const platform::CUDADeviceContext&>(context)
+            .cublas_handle(),
+        cuTransB, cuTransA, N, M, K, &alpha, &B, ldb, strideB, &A, lda,
+        strideA, &beta, &C, ldc, strideC, batchCount));
   }
 };
+
+template <>
+class BatchedGemmFunctor<platform::GPUPlace, double> {
+ public:
+  void operator()(const platform::DeviceContext& context,
+                  const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
+                  const int M, const int N, const int K, const double alpha,
+                  const double* A, const double* B, const double beta,
+                  double* C, const int batchCount, const int strideA,
+                  const int strideB) {
+    // Note that cublas follows fortran order, so the order is different from
+    // the cblas convention.
+    int lda = (transA == CblasNoTrans) ? K : M;
+    int ldb = (transB == CblasNoTrans) ? N : K;
+    int ldc = N;
+    cublasOperation_t cuTransA =
+        (transA == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
+    cublasOperation_t cuTransB =
+        (transB == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
+    const int strideC = M * N;
+
+    PADDLE_ENFORCE(platform::dynload::cublasDgemmStridedBatched(
+        reinterpret_cast<const platform::CUDADeviceContext&>(context)
+            .cublas_handle(),
+        cuTransB, cuTransA, N, M, K, &alpha, &B, ldb, strideB, &A, lda,
+        strideA, &beta, &C, ldc, strideC, batchCount));
+  }
+};
+#endif
 
 template class BatchedGemmFunctor<platform::GPUPlace, float>;
 

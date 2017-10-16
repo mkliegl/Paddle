@@ -130,7 +130,7 @@ void matmul<platform::CPUPlace, double>(
       matrix_b.data<double>(), beta, matrix_out->data<double>());
 }
 
-#ifdef PADDLE_USE_MKLML
+#if 0  // def PADDLE_USE_MKLML
 // Use cblas_{s,d}gemm_batched if available: Run with 1 group of size batchSize.
 template <>
 class BatchedGemmFunctor<platform::CPUPlace, float> {
@@ -140,7 +140,6 @@ class BatchedGemmFunctor<platform::CPUPlace, float> {
                   const int M, const int N, const int K, const float alpha,
                   const float* A, const float* B, const float beta, float* C,
                   const int batchCount, const int strideA, const int strideB) {
-    printf("CPU Batched GEMM - MKL - double!\n");
     int lda = (transA == CblasNoTrans) ? K : M;
     int ldb = (transB == CblasNoTrans) ? N : K;
     int ldc = N;
@@ -167,7 +166,6 @@ class BatchedGemmFunctor<platform::CPUPlace, double> {
                   const double* A, const double* B, const double beta,
                   double* C, const int batchCount, const int strideA,
                   const int strideB) {
-    printf("CPU Batched GEMM - MKL - double!\n");
     int lda = (transA == CblasNoTrans) ? K : M;
     int ldb = (transB == CblasNoTrans) ? N : K;
     int ldc = N;
@@ -184,30 +182,6 @@ class BatchedGemmFunctor<platform::CPUPlace, double> {
                       c_array.data(), &ldc, 1 /* group_count */, &batchCount);
   }
 };
-
-#else
-// Naive implementation for now: Just loop over the batch dimension, i.e.,
-// compute the gemm serially.
-// (In the future, this should probably be parallelized.)
-template <typename T>
-class BatchedGemmFunctor<platform::CPUPlace, T> {
- public:
-  void operator()(const platform::DeviceContext& context,
-                  const CBLAS_TRANSPOSE transA, const CBLAS_TRANSPOSE transB,
-                  const int M, const int N, const int K, const T alpha,
-                  const T* A, const T* B, const T beta, T* C,
-                  const int batchCount, const int strideA, const int strideB) {
-    printf("CPU Batched GEMM - Naive!\n");
-    for (int k = 0; k < batchCount; ++k) {
-      const T* Ak = &A[k * strideA];
-      const T* Bk = &B[k * strideB];
-      T* Ck = &C[k * M * N];
-      gemm<platform::CPUPlace, T>(context, transA, transB, M, N, K, alpha, Ak,
-                                  Bk, beta, Ck);
-    }
-  }
-};
-
 #endif
 
 template class BatchedGemmFunctor<platform::CPUPlace, float>;

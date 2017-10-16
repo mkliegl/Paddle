@@ -77,8 +77,8 @@ class Generator(object):
         Out = reference_matmul(X, Y, self.transpose_X, self.transpose_Y)
         self.inputs = {'X': X, 'Y': Y}
         self.attrs = {
-            'transposeX': self.transpose_X,
-            'transposeY': self.transpose_Y
+            'transpose_X': self.transpose_X,
+            'transpose_Y': self.transpose_Y
         }
         self.outputs = {'Out': Out}
 
