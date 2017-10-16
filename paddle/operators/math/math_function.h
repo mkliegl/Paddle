@@ -112,7 +112,6 @@ class MatMulFunctor {
                   framework::Tensor* out, T beta) {
     auto dim_a = a.dims();
     auto dim_b = b.dims();
-    auto dim_out = out->dims();
 
     PADDLE_ENFORCE(a.place() == b.place() && b.place() == out->place(),
                    "Tensors must all be in the same place.");

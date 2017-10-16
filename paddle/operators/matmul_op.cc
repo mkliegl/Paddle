@@ -104,7 +104,7 @@ class MatMulOp : public framework::OperatorWithKernel {
       PADDLE_ENFORCE_EQ(
           batchCountX, batchCountY,
           "When Input(X) and Input(Y) are both three dimensional, they "
-          "must have same batch dimension.");
+          "must have the same batch dimension.");
     }
     int batchCount = std::max(batchCountX, batchCountY);
 
