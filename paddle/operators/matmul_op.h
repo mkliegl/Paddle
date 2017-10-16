@@ -35,8 +35,8 @@ class MatMulKernel : public framework::OpKernel<T> {
     const Tensor& y = *context.Input<Tensor>("Y");
     Tensor* out = context.Output<Tensor>("Out");
     out->mutable_data<T>(context.GetPlace());
-    bool transpose_x = context.Attr<bool>("transposeX");
-    bool transpose_y = context.Attr<bool>("transposeY");
+    bool transpose_x = context.Attr<bool>("transpose_X");
+    bool transpose_y = context.Attr<bool>("transpose_Y");
 
     math::MatMulFunctor<Place, T>()(context.device_context(), x, transpose_x, y,
                                     transpose_y, T(1), out, T(0));
@@ -89,11 +89,11 @@ Tensor CombineBatchAndN(const framework::ExecutionContext& context,
 // straight-forward to check the following table for when X and Y
 // are both matrices.
 //
-// transposeX | False    | True     | False    | True
-// transposeY | False    | False    | True     | True
+// transpose_X | False    | True     | False    | True
+// transpose_Y | False    | False    | True     | True
 // -----------+----------+----------+----------+-----------
-//       dX = | dOut Y^T | Y dOut^T | dOut Y   | Y^T dOut^T
-//       dY = | X^T dOut | X dOut   | dOut^T X | dOut^T X^T
+//        dX = | dOut Y^T | Y dOut^T | dOut Y   | Y^T dOut^T
+//        dY = | X^T dOut | X dOut   | dOut^T X | dOut^T X^T
 //
 // When X is a vector of size K, we treat it instead as a matrix of shape
 // (1, K). Similarly, when Y is a vector of size K, we treat it instead as
@@ -103,8 +103,8 @@ Tensor CombineBatchAndN(const framework::ExecutionContext& context,
 // the batch dimension can be ignored and the exact same formulas apply
 // as for two matrices.
 //
-// Finally, when X ia 3-dimensional tensor but Y is a matrix, we end up
-// with formulas like
+// Finally, when, e.g., X is a 3-dimensional tensor but Y is a matrix, we end
+// up with formulas like
 //
 //   dY_{ij} = \sum_{p, m} X_{pmi} dOut_{pmj}
 //
@@ -119,8 +119,8 @@ class MatMulGradKernel : public framework::OpKernel<T> {
     const Tensor& dout = *context.Input<Tensor>(framework::GradVarName("Out"));
     Tensor* dx = context.Output<Tensor>(framework::GradVarName("X"));
     Tensor* dy = context.Output<Tensor>(framework::GradVarName("Y"));
-    bool transpose_x = context.Attr<bool>("transposeX");
-    bool transpose_y = context.Attr<bool>("transposeY");
+    bool transpose_x = context.Attr<bool>("transpose_X");
+    bool transpose_y = context.Attr<bool>("transpose_Y");
 
     std::vector<int64_t> x_dims = vectorize(x.dims());
     std::vector<int64_t> y_dims = vectorize(y.dims());
@@ -178,9 +178,10 @@ class MatMulGradKernel : public framework::OpKernel<T> {
 
     if (dx) {
       dx->mutable_data<T>(context.GetPlace());
-      Tensor dOut_for_dX = (x_dims.size() == 2 && y_dims.size() == 3)
-                               ? CombineBatchAndN<Place, T>(context, dOut)
-                               : dOut;
+      const Tensor& dOut_for_dX =
+          (x_dims.size() == 2 && y_dims.size() == 3)
+              ? CombineBatchAndN<Place, T>(context, dOut)
+              : dOut;
       if (x_dims.size() == 2 && y_dims.size() == 3) {
         Y = transpose_y ? CombineBatchAndM<T>(Y)
                         : CombineBatchAndN<Place, T>(context, Y);
@@ -198,9 +199,9 @@ class MatMulGradKernel : public framework::OpKernel<T> {
 
     if (dy) {
       dy->mutable_data<T>(context.GetPlace());
-      Tensor dOut_for_dY = (y_dims.size() == 2 && x_dims.size() == 3)
-                               ? CombineBatchAndM<T>(dOut)
-                               : dOut;
+      const Tensor& dOut_for_dY = (y_dims.size() == 2 && x_dims.size() == 3)
+                                      ? CombineBatchAndM<T>(dOut)
+                                      : dOut;
       if (y_dims.size() == 2 && x_dims.size() == 3) {
         X = transpose_x ? CombineBatchAndN<Place, T>(context, X)
                         : CombineBatchAndM<T>(X);

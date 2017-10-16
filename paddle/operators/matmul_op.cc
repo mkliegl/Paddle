@@ -34,8 +34,8 @@ class MatMulOp : public framework::OperatorWithKernel {
 
     auto dim_x = context->GetInputDim("X");
     auto dim_y = context->GetInputDim("Y");
-    bool transpose_x = context->Attrs().Get<bool>("transposeX");
-    bool transpose_y = context->Attrs().Get<bool>("transposeY");
+    bool transpose_x = context->Attrs().Get<bool>("transpose_X");
+    bool transpose_y = context->Attrs().Get<bool>("transpose_Y");
 
     PADDLE_ENFORCE_GE(dim_x.size(), 1,
                       "Input tensor X must be at least 1-dimensional.");
@@ -135,11 +135,11 @@ class MatMulOpMaker : public framework::OpProtoAndCheckerMaker {
     AddInput("X", "The first input of MatMul op");
     AddInput("Y", "The second input of MatMul op");
     AddOutput("Out", "The output of MatMul op");
-    AddAttr<bool>("transposeX",
+    AddAttr<bool>("transpose_X",
                   R"DOC(If true, use the transpose of X.
         )DOC")
         .SetDefault(false);
-    AddAttr<bool>("transposeY",
+    AddAttr<bool>("transpose_Y",
                   R"DOC(If true, use the transpose of Y.
         )DOC")
         .SetDefault(false);
