@@ -166,7 +166,6 @@ void batched_gemm<platform::GPUPlace, float>(
   int lda = (transA == CblasNoTrans) ? K : M;
   int ldb = (transB == CblasNoTrans) ? N : K;
   int ldc = N;
-  printf("Specialized GPU!\n");
   cublasOperation_t cuTransA =
       (transA == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
   cublasOperation_t cuTransB =
@@ -176,8 +175,8 @@ void batched_gemm<platform::GPUPlace, float>(
   PADDLE_ENFORCE(platform::dynload::cublasSgemmStridedBatched(
       reinterpret_cast<const platform::CUDADeviceContext&>(context)
           .cublas_handle(),
-      cuTransB, cuTransA, N, M, K, &alpha, &B, ldb, strideB, &A, lda, strideA,
-      &beta, &C, ldc, strideC, batchCount));
+      cuTransB, cuTransA, N, M, K, &alpha, B, ldb, strideB, A, lda, strideA,
+      &beta, C, ldc, strideC, batchCount));
 }
 
 template <>
@@ -191,7 +190,6 @@ void batched_gemm<platform::GPUPlace, double>(
   int lda = (transA == CblasNoTrans) ? K : M;
   int ldb = (transB == CblasNoTrans) ? N : K;
   int ldc = N;
-  printf("Specialized GPU!\n");
   cublasOperation_t cuTransA =
       (transA == CblasNoTrans) ? CUBLAS_OP_N : CUBLAS_OP_T;
   cublasOperation_t cuTransB =
@@ -201,8 +199,8 @@ void batched_gemm<platform::GPUPlace, double>(
   PADDLE_ENFORCE(platform::dynload::cublasDgemmStridedBatched(
       reinterpret_cast<const platform::CUDADeviceContext&>(context)
           .cublas_handle(),
-      cuTransB, cuTransA, N, M, K, &alpha, &B, ldb, strideB, &A, lda, strideA,
-      &beta, &C, ldc, strideC, batchCount));
+      cuTransB, cuTransA, N, M, K, &alpha, B, ldb, strideB, A, lda, strideA,
+      &beta, C, ldc, strideC, batchCount));
 }
 
 }  // namespace math
